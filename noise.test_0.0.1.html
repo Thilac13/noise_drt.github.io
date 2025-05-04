@@ -1,0 +1,563 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Random Noise Generator</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            background-color: #2c2c2e;
+            color: white;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            margin: 0;
+            padding: 20px;
+            box-sizing: border-box;
+        }
+        
+        .container {
+            text-align: center;
+            width: 100%;
+            max-width: 400px;
+        }
+        
+        .timer-display {
+            font-size: 3rem;
+            margin: 20px 0;
+            font-weight: bold;
+        }
+        
+        .button {
+            background-color: #3a3a3c;
+            color: white;
+            border: none;
+            border-radius: 10px;
+            padding: 12px 24px;
+            font-size: 1rem;
+            margin: 10px;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+        
+        .button:hover {
+            background-color: #48484a;
+        }
+        
+        .button:active {
+            background-color: #636366;
+        }
+        
+        .button.start {
+            background-color: #30d158;
+        }
+        
+        .button.start:hover {
+            background-color: #34c759;
+        }
+        
+        .button.stop {
+            background-color: #ff453a;
+        }
+        
+        .button.stop:hover {
+            background-color: #ff3b30;
+        }
+        
+        .time-picker {
+            display: flex;
+            justify-content: center;
+            margin: 30px 0;
+            height: 150px;
+            overflow: hidden;
+            position: relative;
+        }
+        
+        .time-picker::before, .time-picker::after {
+            content: '';
+            position: absolute;
+            left: 0;
+            right: 0;
+            height: 60px;
+            background: linear-gradient(to bottom, rgba(44, 44, 46, 1), rgba(44, 44, 46, 0));
+            pointer-events: none;
+            z-index: 2;
+        }
+        
+        .time-picker::before {
+            top: 0;
+        }
+        
+        .time-picker::after {
+            bottom: 0;
+            background: linear-gradient(to top, rgba(44, 44, 46, 1), rgba(44, 44, 46, 0));
+        }
+        
+        .time-column {
+            overflow-y: scroll;
+            scroll-snap-type: y mandatory;
+            margin: 0 10px;
+            height: 100%;
+            width: 60px;
+            -webkit-overflow-scrolling: touch;
+        }
+        
+        .time-column::-webkit-scrollbar {
+            display: none;
+        }
+        
+        .time-option {
+            scroll-snap-align: center;
+            height: 60px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.5rem;
+            color: #8e8e93;
+        }
+        
+        .time-option.selected {
+            color: white;
+            font-weight: bold;
+        }
+        
+        .knob-container {
+            display: none;
+            flex-direction: column;
+            align-items: center;
+            margin: 30px 0;
+        }
+        
+        .knob-label {
+            margin-bottom: 10px;
+            font-size: 1rem;
+            color: #8e8e93;
+        }
+        
+        .knob {
+            width: 80px;
+            height: 80px;
+            border-radius: 50%;
+            background-color: #3a3a3c;
+            position: relative;
+            margin-bottom: 30px;
+        }
+        
+        .knob-marker {
+            width: 4px;
+            height: 15px;
+            background-color: #0a84ff;
+            position: absolute;
+            top: 5px;
+            left: 50%;
+            transform: translateX(-50%);
+            border-radius: 2px;
+        }
+        
+        .hidden {
+            display: none;
+        }
+        
+        .visible {
+            display: flex;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Noise Generator</h1>
+        
+        <div id="setup-screen">
+            <h2>Set Timer Duration</h2>
+            <div class="time-picker">
+                <div class="time-column" id="minutes-column">
+                    <!-- Minutes options will be added by JavaScript -->
+                </div>
+                <div class="time-label">min</div>
+                <div class="time-column" id="seconds-column">
+                    <!-- Seconds options will be added by JavaScript -->
+                </div>
+                <div class="time-label">sec</div>
+            </div>
+            <button class="button start" id="confirm-btn">Confirm</button>
+        </div>
+        
+        <div id="timer-screen" class="hidden">
+            <div class="timer-display" id="timer">00:00</div>
+            
+            <div class="knob-container" id="volume-control">
+                <div class="knob-label">Volume</div>
+                <div class="knob" id="volume-knob">
+                    <div class="knob-marker"></div>
+                </div>
+            </div>
+            
+            <div class="knob-container" id="frequency-control">
+                <div class="knob-label">Frequency</div>
+                <div class="knob" id="frequency-knob">
+                    <div class="knob-marker"></div>
+                </div>
+            </div>
+            
+            <button class="button start" id="start-btn">Start</button>
+            <button class="button stop" id="stop-btn">Stop</button>
+        </div>
+    </div>
+
+    <script>
+        // Audio Context
+        let audioContext;
+        let noiseNode;
+        let gainNode;
+        let isPlaying = false;
+        let timerInterval;
+        let remainingTime = 0;
+        let totalDuration = 0;
+        let nextSoundTime = 0;
+        let soundTimeout;
+        
+        // Volume and frequency values
+        let volume = 0.5;
+        let frequency = 0.5;
+        
+        // DOM Elements
+        const minutesColumn = document.getElementById('minutes-column');
+        const secondsColumn = document.getElementById('seconds-column');
+        const confirmBtn = document.getElementById('confirm-btn');
+        const timerDisplay = document.getElementById('timer');
+        const startBtn = document.getElementById('start-btn');
+        const stopBtn = document.getElementById('stop-btn');
+        const setupScreen = document.getElementById('setup-screen');
+        const timerScreen = document.getElementById('timer-screen');
+        const volumeKnob = document.getElementById('volume-knob');
+        const frequencyKnob = document.getElementById('frequency-knob');
+        
+        // Initialize time picker
+        function initTimePicker() {
+            // Add minutes (0-60)
+            for (let i = 0; i <= 60; i++) {
+                const option = document.createElement('div');
+                option.className = 'time-option';
+                option.textContent = i.toString().padStart(2, '0');
+                option.dataset.value = i;
+                minutesColumn.appendChild(option);
+            }
+            
+            // Add seconds (0-59)
+            for (let i = 0; i < 60; i++) {
+                const option = document.createElement('div');
+                option.className = 'time-option';
+                option.textContent = i.toString().padStart(2, '0');
+                option.dataset.value = i;
+                secondsColumn.appendChild(option);
+            }
+            
+            // Set initial selection to 5 minutes
+            scrollToOption(minutesColumn, 5);
+            scrollToOption(secondsColumn, 0);
+            
+            // Add scroll event listeners
+            minutesColumn.addEventListener('scroll', () => highlightSelectedOption(minutesColumn));
+            secondsColumn.addEventListener('scroll', () => highlightSelectedOption(secondsColumn));
+            
+            // Initial highlight
+            highlightSelectedOption(minutesColumn);
+            highlightSelectedOption(secondsColumn);
+        }
+        
+        function scrollToOption(column, value) {
+            const options = column.querySelectorAll('.time-option');
+            const option = Array.from(options).find(opt => parseInt(opt.dataset.value) === value);
+            if (option) {
+                option.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }
+        }
+        
+        function highlightSelectedOption(column) {
+            const options = column.querySelectorAll('.time-option');
+            const middle = column.clientHeight / 2;
+            
+            options.forEach(option => {
+                const rect = option.getBoundingClientRect();
+                const optionMiddle = rect.top - column.getBoundingClientRect().top + rect.height / 2;
+                const distance = Math.abs(optionMiddle - middle);
+                
+                if (distance < rect.height / 2) {
+                    option.classList.add('selected');
+                } else {
+                    option.classList.remove('selected');
+                }
+            });
+        }
+        
+        function getSelectedValue(column) {
+            const selectedOption = column.querySelector('.time-option.selected');
+            return selectedOption ? parseInt(selectedOption.dataset.value) : 0;
+        }
+        
+        // Initialize knobs
+        function initKnobs() {
+            let isDragging = false;
+            let startAngle = 0;
+            let startVolume = 0;
+            let startFrequency = 0;
+            
+            function startDrag(e, knob, currentValue) {
+                isDragging = true;
+                const rect = knob.getBoundingClientRect();
+                const centerX = rect.left + rect.width / 2;
+                const centerY = rect.top + rect.height / 2;
+                startAngle = Math.atan2(e.clientY - centerY, e.clientX - centerX) * (180 / Math.PI);
+                return currentValue;
+            }
+            
+            function updateKnob(knob, value) {
+                const marker = knob.querySelector('.knob-marker');
+                const angle = value * 270 - 135; // Map 0-1 to -135 to 135 degrees
+                marker.style.transform = `translateX(-50%) rotate(${angle}deg)`;
+                marker.style.transformOrigin = 'bottom center';
+            }
+            
+            function calculateNewValue(e, knob, startValue, startAngle) {
+                const rect = knob.getBoundingClientRect();
+                const centerX = rect.left + rect.width / 2;
+                const centerY = rect.top + rect.height / 2;
+                const currentAngle = Math.atan2(e.clientY - centerY, e.clientX - centerX) * (180 / Math.PI);
+                
+                let angleDiff = currentAngle - startAngle;
+                if (angleDiff > 180) angleDiff -= 360;
+                if (angleDiff < -180) angleDiff += 360;
+                
+                let newValue = startValue + (angleDiff / 270);
+                newValue = Math.max(0, Math.min(1, newValue));
+                
+                return newValue;
+            }
+            
+            // Volume knob
+            volumeKnob.addEventListener('mousedown', (e) => {
+                startVolume = startDrag(e, volumeKnob, volume);
+                e.preventDefault();
+            });
+            
+            volumeKnob.addEventListener('touchstart', (e) => {
+                startVolume = startDrag(e.touches[0], volumeKnob, volume);
+                e.preventDefault();
+            });
+            
+            // Frequency knob
+            frequencyKnob.addEventListener('mousedown', (e) => {
+                startFrequency = startDrag(e, frequencyKnob, frequency);
+                e.preventDefault();
+            });
+            
+            frequencyKnob.addEventListener('touchstart', (e) => {
+                startFrequency = startDrag(e.touches[0], frequencyKnob, frequency);
+                e.preventDefault();
+            });
+            
+            // Document-wide move/end events
+            document.addEventListener('mousemove', (e) => {
+                if (!isDragging) return;
+                
+                if (document.activeElement === volumeKnob) {
+                    volume = calculateNewValue(e, volumeKnob, startVolume, startAngle);
+                    updateKnob(volumeKnob, volume);
+                } else if (document.activeElement === frequencyKnob) {
+                    frequency = calculateNewValue(e, frequencyKnob, startFrequency, startAngle);
+                    updateKnob(frequencyKnob, frequency);
+                }
+                
+                e.preventDefault();
+            });
+            
+            document.addEventListener('touchmove', (e) => {
+                if (!isDragging || e.touches.length !== 1) return;
+                
+                if (document.activeElement === volumeKnob) {
+                    volume = calculateNewValue(e.touches[0], volumeKnob, startVolume, startAngle);
+                    updateKnob(volumeKnob, volume);
+                } else if (document.activeElement === frequencyKnob) {
+                    frequency = calculateNewValue(e.touches[0], frequencyKnob, startFrequency, startAngle);
+                    updateKnob(frequencyKnob, frequency);
+                }
+                
+                e.preventDefault();
+            });
+            
+            document.addEventListener('mouseup', () => {
+                isDragging = false;
+            });
+            
+            document.addEventListener('touchend', () => {
+                isDragging = false;
+            });
+            
+            // Initialize knob positions
+            updateKnob(volumeKnob, volume);
+            updateKnob(frequencyKnob, frequency);
+        }
+        
+        // Timer functions
+        function startTimer() {
+            if (timerInterval) clearInterval(timerInterval);
+            
+            timerInterval = setInterval(() => {
+                remainingTime--;
+                updateTimerDisplay();
+                
+                if (remainingTime <= 0) {
+                    stopTimer();
+                    stopNoise();
+                }
+            }, 1000);
+            
+            scheduleNextSound();
+        }
+        
+        function stopTimer() {
+            if (timerInterval) {
+                clearInterval(timerInterval);
+                timerInterval = null;
+            }
+            
+            if (soundTimeout) {
+                clearTimeout(soundTimeout);
+                soundTimeout = null;
+            }
+        }
+        
+        function updateTimerDisplay() {
+            const minutes = Math.floor(remainingTime / 60);
+            const seconds = remainingTime % 60;
+            timerDisplay.textContent = `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+        }
+        
+        // Audio functions
+        function initAudio() {
+            audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            gainNode = audioContext.createGain();
+            gainNode.gain.value = 0;
+            gainNode.connect(audioContext.destination);
+        }
+        
+        function playNoise(duration) {
+            if (!audioContext) initAudio();
+            
+            // Create a noisy buffer
+            const bufferSize = audioContext.sampleRate * duration;
+            const buffer = audioContext.createBuffer(1, bufferSize, audioContext.sampleRate);
+            const output = buffer.getChannelData(0);
+            
+            // Fill the buffer with noise
+            for (let i = 0; i < bufferSize; i++) {
+                // Random high frequency noise (mostly between 2000-5000 Hz)
+                output[i] = Math.random() * 2 - 1;
+            }
+            
+            // Create a bandpass filter to make it more annoying
+            const bandpass = audioContext.createBiquadFilter();
+            bandpass.type = "bandpass";
+            bandpass.frequency.value = 3000 + Math.random() * 2000; // Random frequency between 3000-5000 Hz
+            bandpass.Q.value = 10;
+            
+            // Create the noise node
+            noiseNode = audioContext.createBufferSource();
+            noiseNode.buffer = buffer;
+            noiseNode.connect(bandpass);
+            bandpass.connect(gainNode);
+            
+            // Set volume based on knob position
+            gainNode.gain.value = volume * 0.5; // Reduce max volume to avoid being too loud
+            
+            // Start and stop the noise
+            noiseNode.start();
+            noiseNode.stop(audioContext.currentTime + duration);
+            
+            noiseNode.onended = () => {
+                if (isPlaying) {
+                    scheduleNextSound();
+                }
+            };
+        }
+        
+        function stopNoise() {
+            if (noiseNode) {
+                noiseNode.stop();
+                noiseNode = null;
+            }
+            if (gainNode) {
+                gainNode.gain.value = 0;
+            }
+            isPlaying = false;
+        }
+        
+        function scheduleNextSound() {
+            if (!isPlaying) return;
+            
+            // Calculate next sound time based on frequency setting
+            // Frequency range: 0.5 = every 30s, 0 = every 2min, 1 = every 5s
+            const minInterval = 5; // 5 seconds
+            const maxInterval = 120; // 2 minutes
+            const interval = minInterval + (1 - frequency) * (maxInterval - minInterval);
+            
+            // Random duration between 0.1 and 2 seconds
+            const duration = 0.1 + Math.random() * 1.9;
+            
+            // Random delay within the calculated interval
+            const delay = Math.random() * interval;
+            
+            soundTimeout = setTimeout(() => {
+                if (isPlaying && remainingTime > 0) {
+                    playNoise(duration);
+                }
+            }, delay * 1000);
+        }
+        
+        // Event listeners
+        confirmBtn.addEventListener('click', () => {
+            const minutes = getSelectedValue(minutesColumn);
+            const seconds = getSelectedValue(secondsColumn);
+            totalDuration = remainingTime = minutes * 60 + seconds;
+            
+            if (totalDuration <= 0) {
+                alert('Please set a timer duration greater than 0');
+                return;
+            }
+            
+            updateTimerDisplay();
+            setupScreen.classList.add('hidden');
+            timerScreen.classList.remove('hidden');
+            
+            // Initialize knobs after they become visible
+            initKnobs();
+        });
+        
+        startBtn.addEventListener('click', () => {
+            if (!isPlaying) {
+                isPlaying = true;
+                startTimer();
+            }
+        });
+        
+        stopBtn.addEventListener('click', () => {
+            isPlaying = false;
+            stopTimer();
+            stopNoise();
+        });
+        
+        // Initialize the app
+        initTimePicker();
+        
+        // Handle iOS audio context restriction
+        document.addEventListener('click', () => {
+            if (!audioContext) {
+                initAudio();
+            }
+        }, { once: true });
+    </script>
+</body>
+</html>
